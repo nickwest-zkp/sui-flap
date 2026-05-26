@@ -1,0 +1,27 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">SuiFlap logo</title>
+  <desc id="desc">A circular launchpad mark with a rising flame-wing shape over a trading arc.</desc>
+  <defs>
+    <linearGradient id="bg" x1="184" y1="176" x2="840" y2="848" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#13262F"/>
+      <stop offset="1" stop-color="#0E171B"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="268" y1="224" x2="748" y2="792" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9C74F"/>
+      <stop offset="1" stop-color="#F97316"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="304" y1="236" x2="722" y2="766" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <circle cx="512" cy="512" r="456" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="392" stroke="#F4E7CC" stroke-opacity="0.18" stroke-width="20"/>
+  <path d="M295 590C372 478 459 406 542 380C627 353 706 374 769 444C691 465 633 500 589 549C550 593 527 642 520 696C449 666 366 641 295 590Z" fill="url(#gold)"/>
+  <path d="M356 607C414 522 484 466 557 441C612 422 666 427 717 458C652 470 602 501 565 546C531 587 510 635 503 688C451 664 402 638 356 607Z" fill="#FDE68A" fill-opacity="0.22"/>
+  <path d="M413 506C451 447 497 401 550 373C573 361 597 353 623 349C592 384 572 423 563 467C557 497 556 527 560 557C513 549 463 534 413 506Z" fill="url(#cyan)"/>
+  <path d="M568 383C631 392 683 422 723 474C679 478 640 494 608 522C586 542 570 567 560 597C553 532 557 462 568 383Z" fill="#0F172A" fill-opacity="0.35"/>
+  <path d="M246 678C333 626 405 597 470 585C535 573 604 580 679 608" stroke="#F4E7CC" stroke-opacity="0.75" stroke-width="24" stroke-linecap="round"/>
+  <path d="M678 608C704 613 730 620 756 630" stroke="#67E8F9" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="760" cy="632" r="16" fill="#67E8F9"/>
+</svg>

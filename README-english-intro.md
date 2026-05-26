@@ -1,0 +1,1 @@
+SuiFlap is a Sui-native launchpad prototype for memecoin-style launches, creator vaults, and PvP token duels. It combines object-based curve trading, tax routing, and DeepBook-ready graduation paths with Walrus-friendly asset storage, giving creators and traders a fast, modular flow from launch to liquidity migration.
