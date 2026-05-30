@@ -50,10 +50,10 @@ export function buildCreateLaunchPreview(
         "curve_object",
         "vault_object",
         draft.deepbookPoolLabel ?? `${draft.symbol}/SUI`,
-        `deepbook_${draft.deepbookQuoteSymbol ?? "SUI"}`,
+        "permissionless_pool",
         draft.deepbookQuoteSymbol ?? "SUI",
       ],
-      note: "Registers the future DeepBook graduation destination for the launch.",
+      note: "Registers the DeepBook graduation target for this launch.",
     },
     {
       target: contractTarget(network, contracts.moduleNames.assetMigration, "create_plan"),
@@ -63,7 +63,7 @@ export function buildCreateLaunchPreview(
         draft.deepbookPoolLabel ?? `${draft.symbol}/SUI`,
         draft.deepbookQuoteSymbol ?? "SUI",
       ],
-      note: "Creates the migration plan that will later flip the asset model from object-based to coin-based.",
+      note: "Creates the migration plan that keeps the DeepBook route attached to the launch.",
     },
   ];
 }

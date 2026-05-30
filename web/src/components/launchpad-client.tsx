@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import {
   useCurrentAccount,
@@ -97,15 +97,25 @@ type CreatedObjectChange = {
   type: "created";
 };
 
+type DeepBookCapability = "checking" | "ready" | "missing";
+
 function packageReady() {
   const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
-  return !contracts.packageId.includes("YOUR_") && !contracts.arenaId.includes("YOUR_");
+  return (
+    !contracts.originalPackageId.includes("YOUR_") &&
+    !contracts.packageId.includes("YOUR_") &&
+    !contracts.arenaId.includes("YOUR_")
+  );
 }
 
 function shortId(value: string) {
   if (!value) return "Unassigned";
   if (value.length <= 18) return value;
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function pureBytes(value: string) {
+  return Array.from(new TextEncoder().encode(value));
 }
 
 function formatRemainingMinutes(endTimeMs: string) {
@@ -248,10 +258,10 @@ function buildCreateLaunchTx(runtimeIds: RuntimeIds, draft: LaunchDraftState) {
   const [curve, creatorCap] = tx.moveCall({
     target: `${contracts.packageId}::${contracts.moduleNames.tokenCurve}::create_token`,
     arguments: [
-      tx.pure.string(draft.name),
-      tx.pure.string(draft.symbol),
-      tx.pure.string(draft.description),
-      tx.pure.string(draft.walrusBlobId),
+      tx.pure.vector("u8", pureBytes(draft.name)),
+      tx.pure.vector("u8", pureBytes(draft.symbol)),
+      tx.pure.vector("u8", pureBytes(draft.description)),
+      tx.pure.vector("u8", pureBytes(draft.walrusBlobId)),
       tx.pure.u64(toU64(draft.virtualSui)),
       tx.pure.u64(toU64(draft.virtualToken)),
       tx.pure.u64(toU64(draft.basePrice)),
@@ -276,9 +286,9 @@ function buildCreateLaunchTx(runtimeIds: RuntimeIds, draft: LaunchDraftState) {
     arguments: [
       curve,
       vault,
-      tx.pure.string(draft.deepbookPoolLabel),
-      tx.pure.string("permissionless_pool"),
-      tx.pure.string(draft.deepbookQuoteSymbol),
+      tx.pure.vector("u8", pureBytes(draft.deepbookPoolLabel)),
+      tx.pure.vector("u8", pureBytes("permissionless_pool")),
+      tx.pure.vector("u8", pureBytes(draft.deepbookQuoteSymbol)),
     ],
   });
 
@@ -287,8 +297,8 @@ function buildCreateLaunchTx(runtimeIds: RuntimeIds, draft: LaunchDraftState) {
     arguments: [
       curve,
       creatorCap,
-      tx.pure.string(draft.deepbookPoolLabel),
-      tx.pure.string(draft.deepbookQuoteSymbol),
+      tx.pure.vector("u8", pureBytes(draft.deepbookPoolLabel)),
+      tx.pure.vector("u8", pureBytes(draft.deepbookQuoteSymbol)),
     ],
   });
 
@@ -307,7 +317,12 @@ function buildCreateLaunchTx(runtimeIds: RuntimeIds, draft: LaunchDraftState) {
     arguments: [migrationPlan],
   });
 
-  tx.transferObjects([creatorCap, vault], tx.pure.address(runtimeIds.creatorRecipient));
+  tx.moveCall({
+    target: `${contracts.packageId}::${contracts.moduleNames.taxVault}::transfer_vault`,
+    arguments: [vault, tx.pure.address(runtimeIds.creatorRecipient)],
+  });
+
+  tx.transferObjects([creatorCap], tx.pure.address(runtimeIds.creatorRecipient));
   return tx;
 }
 
@@ -468,14 +483,15 @@ export function LaunchpadClient() {
   const walletConnection = useWalletConnection();
   const client = useCurrentClient();
   const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
+  const objectPackageId = contracts.originalPackageId;
   const typeNames = useMemo(
     () => ({
-      curve: `${contracts.packageId}::${contracts.moduleNames.tokenCurve}::TokenCurve`,
-      vault: `${contracts.packageId}::${contracts.moduleNames.taxVault}::TaxVault`,
-      creatorCap: `${contracts.packageId}::${contracts.moduleNames.tokenCurve}::CreatorCap`,
-      launchToken: `${contracts.packageId}::${contracts.moduleNames.tokenCurve}::LaunchToken`,
+      curve: `${objectPackageId}::${contracts.moduleNames.tokenCurve}::TokenCurve`,
+      vault: `${objectPackageId}::${contracts.moduleNames.taxVault}::TaxVault`,
+      creatorCap: `${objectPackageId}::${contracts.moduleNames.tokenCurve}::CreatorCap`,
+      launchToken: `${objectPackageId}::${contracts.moduleNames.tokenCurve}::LaunchToken`,
     }),
-    [contracts],
+    [contracts.moduleNames.taxVault, contracts.moduleNames.tokenCurve, objectPackageId],
   );
   const [runtimeIds, setRuntimeIds] = useState<RuntimeIds>({
     creatorRecipient: "",
@@ -518,10 +534,50 @@ export function LaunchpadClient() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingMetadata, setUploadingMetadata] = useState(false);
   const [certifyingMetadata, setCertifyingMetadata] = useState(false);
+  const [deepBookCapability, setDeepBookCapability] = useState<DeepBookCapability>("checking");
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const walrusMetadataFlowRef = useRef<unknown>(null);
 
   const chainReady = useMemo(() => packageReady(), []);
+
+  useEffect(() => {
+    if (!client || !chainReady) {
+      queueMicrotask(() => {
+        setDeepBookCapability("missing");
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadCapabilities() {
+      setDeepBookCapability("checking");
+      try {
+        const modules = await client.getNormalizedMoveModulesByPackage({
+          package: contracts.packageId,
+        });
+        const hasDeepBook =
+          !!modules[contracts.moduleNames.deepbookIntegrator]?.exposedFunctions?.create_graduation &&
+          !!modules[contracts.moduleNames.deepbookIntegrator]?.exposedFunctions?.share_graduation &&
+          !!modules[contracts.moduleNames.assetMigration]?.exposedFunctions?.create_plan &&
+          !!modules[contracts.moduleNames.assetMigration]?.exposedFunctions?.share_plan;
+
+        if (!cancelled) {
+          setDeepBookCapability(hasDeepBook ? "ready" : "missing");
+        }
+      } catch {
+        if (!cancelled) {
+          setDeepBookCapability("missing");
+        }
+      }
+    }
+
+    void loadCapabilities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chainReady, client, contracts.packageId, contracts.moduleNames.assetMigration, contracts.moduleNames.deepbookIntegrator]);
 
   function updateRuntimeId(key: keyof RuntimeIds, value: string) {
     setRuntimeIds((current) => ({
@@ -551,7 +607,7 @@ export function LaunchpadClient() {
     }));
   }
 
-  function discoverCreatedObjectIds(objectChanges: unknown[] | null | undefined) {
+  const discoverCreatedObjectIds = useCallback((objectChanges: unknown[] | null | undefined) => {
     const created: CreatedObjectIds = {
       curveId: "",
       vaultId: "",
@@ -571,9 +627,9 @@ export function LaunchpadClient() {
     }
 
     return created;
-  }
+  }, [typeNames.creatorCap, typeNames.curve, typeNames.vault]);
 
-  async function refreshOwnedObjects(preferredCurveId?: string) {
+  const refreshOwnedObjects = useCallback(async (preferredCurveId?: string) => {
     if (!client || !account?.address || !chainReady) {
       setOwnedLaunchTokens([]);
       setOwnedVaults([]);
@@ -670,9 +726,9 @@ export function LaunchpadClient() {
     } finally {
       setRefreshingOwnedObjects(false);
     }
-  }
+  }, [account?.address, chainReady, client, typeNames.creatorCap, typeNames.launchToken, typeNames.vault]);
 
-  async function refreshArena() {
+  const refreshArena = useCallback(async () => {
     if (!client || !chainReady) {
       setArenaSnapshot(null);
       return;
@@ -709,9 +765,9 @@ export function LaunchpadClient() {
     } finally {
       setRefreshingArena(false);
     }
-  }
+  }, [chainReady, client, contracts.arenaId]);
 
-  async function hydrateCreateResult(digest: string) {
+  const hydrateCreateResult = useCallback(async (digest: string) => {
     const response = await client.getTransactionBlock({
       digest,
       options: {
@@ -732,39 +788,48 @@ export function LaunchpadClient() {
     await refreshOwnedObjects(created.curveId);
 
     return created;
-  }
+  }, [client, discoverCreatedObjectIds, refreshOwnedObjects]);
 
   useEffect(() => {
     if (!account?.address) return;
 
-    setRuntimeIds((current) => {
-      if (current.creatorRecipient) return current;
-      return {
-        ...current,
-        creatorRecipient: account.address,
-      };
-    });
-  }, [account?.address]);
+    if (!runtimeIds.creatorRecipient) {
+      queueMicrotask(() => {
+        setRuntimeIds((current) => ({
+          ...current,
+          creatorRecipient: account.address,
+        }));
+      });
+    }
+  }, [account?.address, runtimeIds.creatorRecipient]);
 
   useEffect(() => {
     if (!account?.address || !chainReady) {
-      setOwnedLaunchTokens([]);
-      setOwnedVaults([]);
-      setOwnedCreatorCaps([]);
+      queueMicrotask(() => {
+        setOwnedLaunchTokens([]);
+        setOwnedVaults([]);
+        setOwnedCreatorCaps([]);
+      });
       return;
     }
 
-    void refreshOwnedObjects();
-  }, [account?.address, chainReady, client, typeNames.launchToken, typeNames.vault, typeNames.creatorCap]);
+    queueMicrotask(() => {
+      void refreshOwnedObjects();
+    });
+  }, [account?.address, chainReady, refreshOwnedObjects]);
 
   useEffect(() => {
     if (!chainReady) {
-      setArenaSnapshot(null);
+      queueMicrotask(() => {
+        setArenaSnapshot(null);
+      });
       return;
     }
 
-    void refreshArena();
-  }, [chainReady, client, contracts.arenaId]);
+    queueMicrotask(() => {
+      void refreshArena();
+    });
+  }, [chainReady, refreshArena]);
 
   async function claimVault(vaultId: string, curveId: string) {
     if (!account) {
@@ -813,6 +878,13 @@ export function LaunchpadClient() {
 
     if (!chainReady) {
       setStatus("Fill real package and object IDs in src/lib/contracts.ts before executing.");
+      return;
+    }
+
+    if (kind === "create" && deepBookCapability !== "ready") {
+      setStatus(
+        "Current on-chain package does not expose DeepBook graduation modules. Upgrade the published package or point contracts.ts at a package that includes deepbook_integrator and asset_migration.",
+      );
       return;
     }
 
@@ -1118,6 +1190,16 @@ export function LaunchpadClient() {
         <div className="rounded-[22px] border border-stone-200 bg-stone-50 p-4">
           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">RPC</p>
           <p className="mt-2 text-sm text-stone-900">{client ? "Ready" : "Unavailable"}</p>
+        </div>
+        <div className="rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-stone-500">DeepBook</p>
+          <p className="mt-2 text-sm text-stone-900">
+            {deepBookCapability === "ready"
+              ? "Ready"
+              : deepBookCapability === "checking"
+                ? "Checking"
+                : "Missing on-chain modules"}
+          </p>
         </div>
       </div>
 

@@ -6,6 +6,7 @@ use sui::coin::{Self as sui_coin, Coin};
 use sui::event;
 use sui::object::{Self as sui_object};
 use sui::sui::SUI;
+use sui::transfer::{Self as sui_transfer};
 use sui_flap::token_curve::{Self, CreatorCap, LaunchToken, TokenCurve};
 
 const BPS_DENOMINATOR: u64 = 10_000;
@@ -87,6 +88,13 @@ public fun create_vault_for_curve(
     });
 
     vault
+}
+
+public fun transfer_vault(
+    vault: TaxVault,
+    recipient: address,
+) {
+    sui_transfer::transfer(vault, recipient);
 }
 
 public fun taxed_buy(

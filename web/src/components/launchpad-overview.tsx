@@ -75,12 +75,12 @@ export function LaunchpadOverview() {
   const [refreshing, setRefreshing] = useState(false);
 
   const launchCreatedEventType = useMemo(
-    () => `${contracts.packageId}::${contracts.moduleNames.tokenCurve}::LaunchCreated`,
-    [contracts],
+    () => `${contracts.originalPackageId}::${contracts.moduleNames.tokenCurve}::LaunchCreated`,
+    [contracts.moduleNames.tokenCurve, contracts.originalPackageId],
   );
   const migrationPlanCreatedEventType = useMemo(
     () => `${contracts.packageId}::${contracts.moduleNames.assetMigration}::MigrationPlanCreated`,
-    [contracts],
+    [contracts.moduleNames.assetMigration, contracts.packageId],
   );
 
   useEffect(() => {
