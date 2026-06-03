@@ -1,0 +1,9 @@
+[package]
+name = "deepbook_coin_launch"
+edition = "2024"
+
+[dependencies]
+sui_flap = { local = "../../sui_flap" }
+
+[addresses]
+deepbook_coin_launch = "0x0"

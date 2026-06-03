@@ -44,7 +44,7 @@ export const CONTRACTS_BY_NETWORK: Record<NetworkName, LaunchpadContracts> = {
   },
   testnet: {
     originalPackageId: "0x15f86e205a99a916404ae9cdf64c54b3c03c36274cfa0db757d7308c2fb677de",
-    packageId: "0x15f86e205a99a916404ae9cdf64c54b3c03c36274cfa0db757d7308c2fb677de",
+    packageId: "0x7bdba89d4f11178ca5c21d93bb6b3825ce14f179c9eb2bb3670a89303ed7b585",
     arenaId: "0x338fa3a3b7581a27202fce01944d0607bb1b400e513210707697ea0a1acbb41e",
     deepbookGraduationId: "0xYOUR_TESTNET_GRADUATION",
     deepbookPackageId: "0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c",

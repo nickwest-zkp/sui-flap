@@ -79,6 +79,14 @@ public struct CoinLaunchCreated has copy, drop {
     quote_symbol: String,
 }
 
+public struct CoinLaunchShared has copy, drop {
+    curve_id: ID,
+    vault_id: ID,
+    cap_id: ID,
+    creator: address,
+    coin_type: AsciiString,
+}
+
 public struct CoinBuyExecuted has copy, drop {
     curve_id: ID,
     buyer: address,
@@ -221,6 +229,66 @@ public fun share_curve<T>(curve: CoinCurve<T>) {
 
 public fun share_vault<T>(vault: CoinTaxVault<T>) {
     sui_transfer::share_object(vault);
+}
+
+public fun create_and_share_launch<T: drop>(
+    witness: T,
+    decimals: u8,
+    name: vector<u8>,
+    symbol: vector<u8>,
+    description: vector<u8>,
+    walrus_blob_id: vector<u8>,
+    virtual_sui: u64,
+    virtual_token: u64,
+    base_price: u64,
+    price_step_bps: u64,
+    graduation_threshold: u64,
+    graduation_token_liquidity: u64,
+    buy_tax_bps: u64,
+    sell_tax_bps: u64,
+    vault_percentage_bps: u64,
+    target_pool_label: vector<u8>,
+    quote_symbol: vector<u8>,
+    ctx: &mut TxContext,
+) {
+    let (curve, vault, cap, metadata_cap) = create_launch<T>(
+        witness,
+        decimals,
+        name,
+        symbol,
+        description,
+        walrus_blob_id,
+        virtual_sui,
+        virtual_token,
+        base_price,
+        price_step_bps,
+        graduation_threshold,
+        graduation_token_liquidity,
+        buy_tax_bps,
+        sell_tax_bps,
+        vault_percentage_bps,
+        target_pool_label,
+        quote_symbol,
+        ctx,
+    );
+
+    let curve_id = sui_object::id(&curve);
+    let vault_id = sui_object::id(&vault);
+    let cap_id = sui_object::id(&cap);
+    let creator = sui_tx_context::sender(ctx);
+
+    sui_transfer::share_object(curve);
+    sui_transfer::share_object(vault);
+    sui_transfer::public_transfer(cap, creator);
+    sui_transfer::public_transfer(metadata_cap, creator);
+
+    event::emit(CoinLaunchShared {
+        curve_id,
+        vault_id,
+        cap_id,
+        creator,
+        coin_type: type_name::with_defining_ids<T>().into_string(),
+    });
 }
 
 public fun buy<T>(

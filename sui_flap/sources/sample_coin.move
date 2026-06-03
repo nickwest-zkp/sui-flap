@@ -2,7 +2,7 @@ module sui_flap::sample_coin;
 
 use sui::coin_registry::MetadataCap;
 use sui::transfer::{Self as sui_transfer};
-use sui::tx_context::{Self as sui_tx_context, TxContext};
+use sui::tx_context::TxContext;
 
 use sui_flap::coin_launch::{Self, CoinCreatorCap, CoinCurve, CoinTaxVault};
 
@@ -52,9 +52,24 @@ public fun transfer_sample_cap_and_metadata(
 }
 
 fun init(witness: SAMPLE_COIN, ctx: &mut TxContext) {
-    let (curve, vault, cap, metadata) = create_sample_launch(witness, ctx);
-    coin_launch::share_curve(curve);
-    coin_launch::share_vault(vault);
-    sui_transfer::public_transfer(cap, sui_tx_context::sender(ctx));
-    sui_transfer::public_transfer(metadata, sui_tx_context::sender(ctx));
+    coin_launch::create_and_share_launch<SAMPLE_COIN>(
+        witness,
+        9,
+        b"SuiFlap Sample",
+        b"SFLAP",
+        b"Sample coin launch using the DeepBook-ready Coin<T> path.",
+        b"",
+        500,
+        50_000,
+        1,
+        500,
+        6_000,
+        1_000_000,
+        150,
+        250,
+        7_000,
+        b"SFLAP/SUI",
+        b"SUI",
+        ctx,
+    );
 }

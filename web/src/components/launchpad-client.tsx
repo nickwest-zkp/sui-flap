@@ -673,6 +673,7 @@ export function LaunchpadClient() {
 
   const [status, setStatus] = useState<string>("Idle");
   const [busy, setBusy] = useState<null | "create" | "buy" | "sell" | "resolve" | "enter" | "duelbuy" | "coinbuy" | "createpool" | "graduate">(null);
+  const [pendingDeepBookAction, setPendingDeepBookAction] = useState<null | "createpool">(null);
   const [ownedLaunchTokens, setOwnedLaunchTokens] = useState<OwnedLaunchToken[]>([]);
   const [ownedVaults, setOwnedVaults] = useState<OwnedVault[]>([]);
   const [ownedCreatorCaps, setOwnedCreatorCaps] = useState<OwnedCreatorCap[]>([]);
@@ -1263,13 +1264,13 @@ export function LaunchpadClient() {
     }
 
     if (kind === "coinbuy" && (!runtimeIds.coinCurveId || !runtimeIds.coinVaultId)) {
-      setStatus("Set Coin Curve and Coin Vault before buying Sample Coin.");
+      setStatus("Set Coin Curve and Coin Vault from a Coin<T> launch package before buying.");
       return;
     }
 
     if (kind === "graduate") {
       if (!runtimeIds.coinCurveId || !runtimeIds.coinVaultId || !runtimeIds.coinCreatorCapId || !runtimeIds.deepbookPoolId) {
-        setStatus("Set Coin Curve, Coin Vault, Coin CreatorCap, and DeepBook Pool before graduating to DeepBook.");
+        setStatus("Set Coin Curve, Coin Vault, Coin CreatorCap, and DeepBook Pool from a Coin<T> launch before graduating.");
         return;
       }
     }
@@ -1290,14 +1291,14 @@ export function LaunchpadClient() {
       await refreshOwnedObjects(runtimeIds.curveId || undefined);
 
       if (kind === "coinbuy") {
-        setStatus(`Bought Sample Coin through coin_launch. Digest: ${digest}`);
+        setStatus(`Bought Coin<T> launch token through coin_launch. Digest: ${digest}`);
       } else if (kind === "createpool") {
         setStatus(
           `Created DeepBook pool. Digest: ${digest}. Pool ${shortId(created.deepbookPoolId)}. This spends 500 testnet DEEP.`,
         );
       } else {
         setStatus(
-          `Graduated Sample Coin into DeepBook. Digest: ${digest}. BalanceManager ${shortId(created.balanceManagerId)}.`,
+          `Graduated Coin<T> launch into DeepBook. Digest: ${digest}. BalanceManager ${shortId(created.balanceManagerId)}.`,
         );
       }
     } catch (error) {
@@ -1704,8 +1705,10 @@ export function LaunchpadClient() {
         <div className="rounded-[22px] border border-stone-200 bg-stone-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Launch Builder</p>
-              <p className="mt-2 text-sm text-stone-800">Editable create parameters for the next launch.</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Object Token Builder</p>
+              <p className="mt-2 text-sm text-stone-800">
+                Legacy object-token launch path for app testing. DeepBook graduation requires a Coin&lt;T&gt; launch package.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1840,6 +1843,15 @@ export function LaunchpadClient() {
         </div>
       </div>
 
+      <div className="mt-5 rounded-[22px] border border-emerald-200 bg-emerald-50 p-4">
+        <p className="text-xs uppercase tracking-[0.18em] text-emerald-700">DeepBook Coin Launch</p>
+        <p className="mt-2 text-sm leading-6 text-emerald-950">
+          To create a launch that can really graduate to DeepBook, publish a Coin&lt;T&gt; package from
+          templates/deepbook_coin_launch. Its init function creates the Coin Curve, Coin Vault, and Coin
+          CreatorCap. Use those IDs below for buy, pool creation, and graduation.
+        </p>
+      </div>
+
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {(
           [
@@ -1879,12 +1891,12 @@ export function LaunchpadClient() {
           disabled={busy !== null}
           onClick={() => void runDeepBookAction("coinbuy")}
         >
-          {busy === "coinbuy" ? "Buying..." : "Buy Sample Coin"}
+          {busy === "coinbuy" ? "Buying..." : "Buy Coin Launch"}
         </button>
         <button
           className="rounded-full bg-teal-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy !== null}
-          onClick={() => void runDeepBookAction("createpool")}
+          onClick={() => setPendingDeepBookAction("createpool")}
         >
           {busy === "createpool" ? "Creating..." : "Create DeepBook Pool"}
         </button>
@@ -1900,7 +1912,7 @@ export function LaunchpadClient() {
           disabled={busy !== null}
           onClick={() => runAction("create")}
         >
-          {busy === "create" ? "Creating..." : "Create Launch"}
+          {busy === "create" ? "Creating..." : "Create Object Launch"}
         </button>
         <button
           className="rounded-full bg-orange-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -1943,6 +1955,40 @@ export function LaunchpadClient() {
         <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Execution Status</p>
         <p className="mt-2 text-sm leading-7 text-stone-800">{status}</p>
       </div>
+
+      {pendingDeepBookAction === "createpool" ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 px-4">
+          <div className="w-full max-w-md rounded-[22px] border border-stone-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs uppercase tracking-[0.18em] text-stone-500">DeepBook Pool Creation</p>
+            <h2 className="mt-3 text-xl font-semibold text-stone-950">Confirm 500 DEEP spend</h2>
+            <p className="mt-3 text-sm leading-6 text-stone-700">
+              Creating a permissionless DeepBook pool spends 500 testnet DEEP. The pool only needs to be
+              created once for this coin pair. Continue only if you want to pay this cost.
+            </p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="rounded-full border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={busy !== null}
+                onClick={() => setPendingDeepBookAction(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-full bg-teal-700 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={busy !== null}
+                onClick={() => {
+                  setPendingDeepBookAction(null);
+                  void runDeepBookAction("createpool");
+                }}
+                type="button"
+              >
+                Confirm and Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
