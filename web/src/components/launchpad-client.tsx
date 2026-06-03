@@ -685,6 +685,15 @@ export function LaunchpadClient() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingMetadata, setUploadingMetadata] = useState(false);
   const [certifyingMetadata, setCertifyingMetadata] = useState(false);
+
+  const hasCoinLaunchIds = Boolean(runtimeIds.coinCurveId && runtimeIds.coinVaultId);
+  const hasDeepBookPool = Boolean(runtimeIds.deepbookPoolId);
+  const hasGraduationIds = Boolean(
+    runtimeIds.coinCurveId &&
+      runtimeIds.coinVaultId &&
+      runtimeIds.coinCreatorCapId &&
+      runtimeIds.deepbookPoolId,
+  );
   const [deepBookCapability, setDeepBookCapability] = useState<DeepBookCapability>("checking");
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const walrusMetadataFlowRef = useRef<unknown>(null);
@@ -1885,71 +1894,133 @@ export function LaunchpadClient() {
         ))}
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <button
-          className="rounded-full bg-emerald-800 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => void runDeepBookAction("coinbuy")}
-        >
-          {busy === "coinbuy" ? "Buying..." : "Buy Coin Launch"}
-        </button>
-        <button
-          className="rounded-full bg-teal-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => setPendingDeepBookAction("createpool")}
-        >
-          {busy === "createpool" ? "Creating..." : "Create DeepBook Pool"}
-        </button>
-        <button
-          className="rounded-full bg-lime-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => void runDeepBookAction("graduate")}
-        >
-          {busy === "graduate" ? "Graduating..." : "Graduate to DeepBook"}
-        </button>
-        <button
-          className="rounded-full bg-stone-950 px-4 py-3 text-sm font-medium text-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => runAction("create")}
-        >
-          {busy === "create" ? "Creating..." : "Create Object Launch"}
-        </button>
-        <button
-          className="rounded-full bg-orange-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => runAction("buy")}
-        >
-          {busy === "buy" ? "Buying..." : "Buy 0.02 SUI"}
-        </button>
-        <button
-          className="rounded-full bg-cyan-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => runAction("sell")}
-        >
-          {busy === "sell" ? "Selling..." : "Sell 5,000"}
-        </button>
-        <button
-          className="rounded-full bg-violet-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => void runDuelAction("enter")}
-        >
-          {busy === "enter" ? "Entering..." : "Enter Duel"}
-        </button>
-        <button
-          className="rounded-full bg-emerald-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => void runDuelAction("duelbuy")}
-        >
-          {busy === "duelbuy" ? "Buying..." : "Duel Buy 0.02"}
-        </button>
-        <button
-          className="rounded-full bg-stone-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy !== null}
-          onClick={() => runAction("resolve")}
-        >
-          {busy === "resolve" ? "Resolving..." : "Resolve Duel"}
-        </button>
+      <div className="mt-5 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Execution Flow</p>
+            <p className="mt-2 text-sm text-stone-800">
+              Follow these steps after publishing a Coin&lt;T&gt; launch package.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
+          <div className="rounded-[18px] border border-stone-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Step 1</p>
+            <p className="mt-2 text-sm font-medium text-stone-950">Find launch IDs</p>
+            <p className="mt-2 min-h-10 text-xs leading-5 text-stone-500">
+              Refresh events and wallet caps after the Coin&lt;T&gt; package is published.
+            </p>
+            <button
+              className="mt-4 w-full rounded-full border border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!account || refreshingOwnedObjects || busy !== null}
+              onClick={() => {
+                void refreshOwnedObjects();
+                void refreshCoinLaunchEvents();
+              }}
+              type="button"
+            >
+              {refreshingOwnedObjects ? "Refreshing..." : "Refresh Launch IDs"}
+            </button>
+          </div>
+
+          <div className="rounded-[18px] border border-stone-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Step 2</p>
+            <p className="mt-2 text-sm font-medium text-stone-950">Buy to graduation</p>
+            <p className="mt-2 min-h-10 text-xs leading-5 text-stone-500">
+              Buy from the Coin&lt;T&gt; curve until it reaches the graduation threshold.
+            </p>
+            <button
+              className="mt-4 w-full rounded-full bg-emerald-800 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={busy !== null || !hasCoinLaunchIds}
+              onClick={() => void runDeepBookAction("coinbuy")}
+              type="button"
+            >
+              {busy === "coinbuy" ? "Buying..." : "Buy Coin Launch"}
+            </button>
+          </div>
+
+          <div className="rounded-[18px] border border-stone-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Step 3</p>
+            <p className="mt-2 text-sm font-medium text-stone-950">Create pool</p>
+            <p className="mt-2 min-h-10 text-xs leading-5 text-stone-500">
+              Create the DeepBook pool once for this pair. This spends 500 testnet DEEP.
+            </p>
+            <button
+              className="mt-4 w-full rounded-full bg-teal-700 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={busy !== null || hasDeepBookPool}
+              onClick={() => setPendingDeepBookAction("createpool")}
+              type="button"
+            >
+              {hasDeepBookPool ? "Pool Linked" : busy === "createpool" ? "Creating..." : "Create Pool"}
+            </button>
+          </div>
+
+          <div className="rounded-[18px] border border-stone-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Step 4</p>
+            <p className="mt-2 text-sm font-medium text-stone-950">Graduate</p>
+            <p className="mt-2 min-h-10 text-xs leading-5 text-stone-500">
+              Move launch liquidity into DeepBook and place the initial maker order.
+            </p>
+            <button
+              className="mt-4 w-full rounded-full bg-lime-700 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={busy !== null || !hasGraduationIds}
+              onClick={() => void runDeepBookAction("graduate")}
+              type="button"
+            >
+              {busy === "graduate" ? "Graduating..." : "Graduate"}
+            </button>
+          </div>
+        </div>
       </div>
+
+      <details className="mt-5 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+        <summary className="cursor-pointer text-sm font-medium text-stone-900">Advanced actions</summary>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <button
+            className="rounded-full bg-stone-950 px-4 py-3 text-sm font-medium text-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => runAction("create")}
+          >
+            {busy === "create" ? "Creating..." : "Create Object Launch"}
+          </button>
+          <button
+            className="rounded-full bg-orange-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => runAction("buy")}
+          >
+            {busy === "buy" ? "Buying..." : "Object Buy 0.02"}
+          </button>
+          <button
+            className="rounded-full bg-cyan-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => runAction("sell")}
+          >
+            {busy === "sell" ? "Selling..." : "Object Sell 5,000"}
+          </button>
+          <button
+            className="rounded-full bg-violet-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void runDuelAction("enter")}
+          >
+            {busy === "enter" ? "Entering..." : "Enter Duel"}
+          </button>
+          <button
+            className="rounded-full bg-emerald-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void runDuelAction("duelbuy")}
+          >
+            {busy === "duelbuy" ? "Buying..." : "Duel Buy 0.02"}
+          </button>
+          <button
+            className="rounded-full bg-stone-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => runAction("resolve")}
+          >
+            {busy === "resolve" ? "Resolving..." : "Resolve Duel"}
+          </button>
+        </div>
+      </details>
 
       <div className="mt-5 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
         <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Execution Status</p>
