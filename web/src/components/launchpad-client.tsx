@@ -9,7 +9,7 @@ import {
   useDAppKit,
   useWalletConnection,
 } from "@mysten/dapp-kit-react";
-import { Transaction } from "@mysten/sui/transactions";
+import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 
 import { DEFAULT_NETWORK, CONTRACTS_BY_NETWORK } from "@/lib/contracts";
 import { sampleLaunchDraft } from "@/lib/mock-data";
@@ -20,6 +20,10 @@ type RuntimeIds = {
   curveId: string;
   vaultId: string;
   launchTokenId: string;
+  coinCurveId: string;
+  coinVaultId: string;
+  coinCreatorCapId: string;
+  deepbookPoolId: string;
   duelId: string;
   curveA: string;
   vaultA: string;
@@ -89,6 +93,11 @@ type CreatedObjectIds = {
   curveId: string;
   vaultId: string;
   creatorCapId: string;
+  coinCurveId: string;
+  coinVaultId: string;
+  coinCreatorCapId: string;
+  deepbookPoolId: string;
+  balanceManagerId: string;
 };
 
 type CreatedObjectChange = {
@@ -98,6 +107,19 @@ type CreatedObjectChange = {
 };
 
 type DeepBookCapability = "checking" | "ready" | "missing";
+
+const SUI_COIN_TYPE = "0x2::sui::SUI";
+const DEEPBOOK_POOL_CREATION_FEE_DEEP = 500_000_000;
+const SAMPLE_POOL_TICK_SIZE = 1_000_000;
+const SAMPLE_POOL_LOT_SIZE = 1_000_000;
+const SAMPLE_POOL_MIN_SIZE = 1_000_000;
+const SAMPLE_MAKER_PRICE = 1_000_000;
+const SAMPLE_MAKER_QUANTITY = 1_000_000;
+const SAMPLE_MAKER_EXTRA_QUOTE_SUI = 0.1;
+const SAMPLE_MAKER_IS_BID = true;
+const SAMPLE_MAKER_PAY_WITH_DEEP = false;
+const ORDER_TYPE_NO_RESTRICTION = 0;
+const SELF_MATCHING_ALLOWED = 0;
 
 function packageReady() {
   const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
@@ -459,6 +481,126 @@ function buildClaimVaultTx(vaultId: string, creatorCapId: string, recipient: str
   return tx;
 }
 
+function sampleCoinType() {
+  const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
+  return `${contracts.originalPackageId}::${contracts.moduleNames.sampleCoin}::SAMPLE_COIN`;
+}
+
+function buildCreateSampleDeepBookPoolTx() {
+  const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
+  const tx = new Transaction();
+  const deepCoin = coinWithBalance({
+    type: contracts.deepCoinType,
+    balance: DEEPBOOK_POOL_CREATION_FEE_DEEP,
+  });
+
+  tx.moveCall({
+    target: `${contracts.deepbookPackageId}::pool::create_permissionless_pool`,
+    arguments: [
+      tx.object(contracts.deepbookRegistryId),
+      tx.pure.u64(SAMPLE_POOL_TICK_SIZE),
+      tx.pure.u64(SAMPLE_POOL_LOT_SIZE),
+      tx.pure.u64(SAMPLE_POOL_MIN_SIZE),
+      deepCoin,
+    ],
+    typeArguments: [sampleCoinType(), SUI_COIN_TYPE],
+  });
+
+  return tx;
+}
+
+function buildGraduateSampleToDeepBookTx(runtimeIds: RuntimeIds, recipient: string) {
+  const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
+  const tx = new Transaction();
+  const sampleType = sampleCoinType();
+  const manager = tx.moveCall({
+    target: `${contracts.deepbookPackageId}::balance_manager::new_with_custom_owner`,
+    arguments: [tx.pure.address(recipient)],
+  });
+
+  const [baseCoin, quoteCoin] = tx.moveCall({
+    target: `${contracts.packageId}::${contracts.moduleNames.coinLaunch}::graduate_to_deepbook`,
+    arguments: [
+      tx.object(runtimeIds.coinCurveId),
+      tx.object(runtimeIds.coinVaultId),
+      tx.object(runtimeIds.coinCreatorCapId),
+      tx.pure.vector("u8", pureBytes("ptb_balance_manager")),
+      tx.object.clock(),
+    ],
+    typeArguments: [sampleType],
+  });
+
+  tx.moveCall({
+    target: `${contracts.deepbookPackageId}::balance_manager::deposit`,
+    arguments: [manager, baseCoin],
+    typeArguments: [sampleType],
+  });
+
+  tx.moveCall({
+    target: `${contracts.deepbookPackageId}::balance_manager::deposit`,
+    arguments: [manager, quoteCoin],
+    typeArguments: [SUI_COIN_TYPE],
+  });
+
+  const extraQuoteCoin = splitGasForAmount(tx, SAMPLE_MAKER_EXTRA_QUOTE_SUI);
+  tx.moveCall({
+    target: `${contracts.deepbookPackageId}::balance_manager::deposit`,
+    arguments: [manager, extraQuoteCoin],
+    typeArguments: [SUI_COIN_TYPE],
+  });
+
+  const tradeProof = tx.moveCall({
+    target: `${contracts.deepbookPackageId}::balance_manager::generate_proof_as_owner`,
+    arguments: [manager],
+  });
+
+  tx.moveCall({
+    target: `${contracts.deepbookPackageId}::pool::place_limit_order`,
+    arguments: [
+      tx.object(runtimeIds.deepbookPoolId),
+      manager,
+      tradeProof,
+      tx.pure.u64(Date.now()),
+      tx.pure.u8(ORDER_TYPE_NO_RESTRICTION),
+      tx.pure.u8(SELF_MATCHING_ALLOWED),
+      tx.pure.u64(SAMPLE_MAKER_PRICE),
+      tx.pure.u64(SAMPLE_MAKER_QUANTITY),
+      tx.pure.bool(SAMPLE_MAKER_IS_BID),
+      tx.pure.bool(SAMPLE_MAKER_PAY_WITH_DEEP),
+      tx.pure.u64("1844674407370955161"),
+      tx.object.clock(),
+    ],
+    typeArguments: [sampleType, SUI_COIN_TYPE],
+  });
+
+  tx.moveCall({
+    target: "0x2::transfer::public_share_object",
+    arguments: [manager],
+    typeArguments: [`${contracts.deepbookPackageId}::balance_manager::BalanceManager`],
+  });
+
+  return tx;
+}
+
+function buildBuySampleCoinTx(runtimeIds: RuntimeIds, amountSui: number, recipient: string) {
+  const contracts = CONTRACTS_BY_NETWORK[DEFAULT_NETWORK];
+  const tx = new Transaction();
+  const paymentCoin = splitGasForAmount(tx, amountSui);
+  const [sampleCoin, change] = tx.moveCall({
+    target: `${contracts.packageId}::${contracts.moduleNames.coinLaunch}::buy`,
+    arguments: [
+      tx.object(runtimeIds.coinCurveId),
+      tx.object(runtimeIds.coinVaultId),
+      paymentCoin,
+      tx.object.clock(),
+    ],
+    typeArguments: [sampleCoinType()],
+  });
+
+  tx.transferObjects([sampleCoin, change], tx.pure.address(recipient));
+  return tx;
+}
+
 async function executeTransaction(
   signAndExecute: ReturnType<typeof useDAppKit>["signAndExecuteTransaction"],
   tx: Transaction,
@@ -490,14 +632,21 @@ export function LaunchpadClient() {
       vault: `${objectPackageId}::${contracts.moduleNames.taxVault}::TaxVault`,
       creatorCap: `${objectPackageId}::${contracts.moduleNames.tokenCurve}::CreatorCap`,
       launchToken: `${objectPackageId}::${contracts.moduleNames.tokenCurve}::LaunchToken`,
+      coinCurve: `${objectPackageId}::${contracts.moduleNames.coinLaunch}::CoinCurve<${sampleCoinType()}>`,
+      coinVault: `${objectPackageId}::${contracts.moduleNames.coinLaunch}::CoinTaxVault<${sampleCoinType()}>`,
+      coinCreatorCap: `${objectPackageId}::${contracts.moduleNames.coinLaunch}::CoinCreatorCap<${sampleCoinType()}>`,
     }),
-    [contracts.moduleNames.taxVault, contracts.moduleNames.tokenCurve, objectPackageId],
+    [contracts.moduleNames.coinLaunch, contracts.moduleNames.taxVault, contracts.moduleNames.tokenCurve, objectPackageId],
   );
   const [runtimeIds, setRuntimeIds] = useState<RuntimeIds>({
     creatorRecipient: "",
     curveId: "",
     vaultId: "",
     launchTokenId: "",
+    coinCurveId: "",
+    coinVaultId: "",
+    coinCreatorCapId: "",
+    deepbookPoolId: contracts.sampleDeepbookPoolId.includes("YOUR_") ? "" : contracts.sampleDeepbookPoolId,
     duelId: "",
     curveA: "",
     vaultA: "",
@@ -523,10 +672,11 @@ export function LaunchpadClient() {
   });
 
   const [status, setStatus] = useState<string>("Idle");
-  const [busy, setBusy] = useState<null | "create" | "buy" | "sell" | "resolve" | "enter" | "duelbuy">(null);
+  const [busy, setBusy] = useState<null | "create" | "buy" | "sell" | "resolve" | "enter" | "duelbuy" | "coinbuy" | "createpool" | "graduate">(null);
   const [ownedLaunchTokens, setOwnedLaunchTokens] = useState<OwnedLaunchToken[]>([]);
   const [ownedVaults, setOwnedVaults] = useState<OwnedVault[]>([]);
   const [ownedCreatorCaps, setOwnedCreatorCaps] = useState<OwnedCreatorCap[]>([]);
+  const [ownedCoinCreatorCaps, setOwnedCoinCreatorCaps] = useState<OwnedCreatorCap[]>([]);
   const [refreshingOwnedObjects, setRefreshingOwnedObjects] = useState(false);
   const [arenaSnapshot, setArenaSnapshot] = useState<ArenaSnapshot | null>(null);
   const [refreshingArena, setRefreshingArena] = useState(false);
@@ -612,6 +762,11 @@ export function LaunchpadClient() {
       curveId: "",
       vaultId: "",
       creatorCapId: "",
+      coinCurveId: "",
+      coinVaultId: "",
+      coinCreatorCapId: "",
+      deepbookPoolId: "",
+      balanceManagerId: "",
     };
 
     for (const change of objectChanges ?? []) {
@@ -623,23 +778,34 @@ export function LaunchpadClient() {
         created.vaultId = change.objectId;
       } else if (!created.creatorCapId && change.objectType === typeNames.creatorCap) {
         created.creatorCapId = change.objectId;
+      } else if (!created.coinCurveId && change.objectType === typeNames.coinCurve) {
+        created.coinCurveId = change.objectId;
+      } else if (!created.coinVaultId && change.objectType === typeNames.coinVault) {
+        created.coinVaultId = change.objectId;
+      } else if (!created.coinCreatorCapId && change.objectType === typeNames.coinCreatorCap) {
+        created.coinCreatorCapId = change.objectId;
+      } else if (!created.deepbookPoolId && change.objectType.includes("::pool::Pool<") && change.objectType.includes(sampleCoinType())) {
+        created.deepbookPoolId = change.objectId;
+      } else if (!created.balanceManagerId && change.objectType.endsWith("::balance_manager::BalanceManager")) {
+        created.balanceManagerId = change.objectId;
       }
     }
 
     return created;
-  }, [typeNames.creatorCap, typeNames.curve, typeNames.vault]);
+  }, [typeNames.coinCreatorCap, typeNames.coinCurve, typeNames.coinVault, typeNames.creatorCap, typeNames.curve, typeNames.vault]);
 
   const refreshOwnedObjects = useCallback(async (preferredCurveId?: string) => {
     if (!client || !account?.address || !chainReady) {
       setOwnedLaunchTokens([]);
       setOwnedVaults([]);
       setOwnedCreatorCaps([]);
+      setOwnedCoinCreatorCaps([]);
       return;
     }
 
     setRefreshingOwnedObjects(true);
     try {
-      const [launchTokenResponse, vaultResponse, creatorCapResponse] = await Promise.all([
+      const [launchTokenResponse, vaultResponse, creatorCapResponse, coinCreatorCapResponse] = await Promise.all([
         client.getOwnedObjects({
           owner: account.address,
           filter: { StructType: typeNames.launchToken },
@@ -655,6 +821,12 @@ export function LaunchpadClient() {
         client.getOwnedObjects({
           owner: account.address,
           filter: { StructType: typeNames.creatorCap },
+          options: { showContent: true, showType: true },
+          limit: 50,
+        }),
+        client.getOwnedObjects({
+          owner: account.address,
+          filter: { StructType: typeNames.coinCreatorCap },
           options: { showContent: true, showType: true },
           limit: 50,
         }),
@@ -704,9 +876,23 @@ export function LaunchpadClient() {
         })
         .filter((item): item is OwnedCreatorCap => item !== null);
 
+      const nextCoinCreatorCaps = (coinCreatorCapResponse.data ?? [])
+        .map((item) => {
+          const object = item.data;
+          const fields = readMoveFields(object?.content);
+          if (!object?.objectId || !fields) return null;
+
+          return {
+            objectId: object.objectId,
+            curveId: readObjectId(fields.curve_id),
+          } satisfies OwnedCreatorCap;
+        })
+        .filter((item): item is OwnedCreatorCap => item !== null);
+
       setOwnedLaunchTokens(nextLaunchTokens);
       setOwnedVaults(nextVaults);
       setOwnedCreatorCaps(nextCreatorCaps);
+      setOwnedCoinCreatorCaps(nextCoinCreatorCaps);
 
       setRuntimeIds((current) => {
         const targetCurveId = preferredCurveId || current.curveId;
@@ -721,12 +907,13 @@ export function LaunchpadClient() {
           ...current,
           vaultId: current.vaultId || matchingVault?.objectId || "",
           launchTokenId: current.launchTokenId || matchingLaunchToken?.objectId || "",
+          coinCreatorCapId: current.coinCreatorCapId || nextCoinCreatorCaps[0]?.objectId || "",
         };
       });
     } finally {
       setRefreshingOwnedObjects(false);
     }
-  }, [account?.address, chainReady, client, typeNames.creatorCap, typeNames.launchToken, typeNames.vault]);
+  }, [account?.address, chainReady, client, typeNames.coinCreatorCap, typeNames.creatorCap, typeNames.launchToken, typeNames.vault]);
 
   const refreshArena = useCallback(async () => {
     if (!client || !chainReady) {
@@ -767,6 +954,35 @@ export function LaunchpadClient() {
     }
   }, [chainReady, client, contracts.arenaId]);
 
+  const refreshCoinLaunchEvents = useCallback(async () => {
+    if (!client || !chainReady) return;
+
+    const response = await client.queryEvents({
+      query: {
+        MoveEventType: `${contracts.packageId}::${contracts.moduleNames.coinLaunch}::CoinLaunchCreated`,
+      },
+      limit: 20,
+      order: "descending",
+    });
+
+    const sampleType = sampleCoinType();
+    const sampleLaunch = (response.data ?? []).find((event) => {
+      const parsed = event.parsedJson as Record<string, unknown> | undefined;
+      return typeof parsed?.coin_type === "string" && parsed.coin_type.includes(sampleType);
+    });
+
+    const parsed = sampleLaunch?.parsedJson as Record<string, unknown> | undefined;
+    if (!parsed) return;
+
+    setRuntimeIds((current) => ({
+      ...current,
+      coinCurveId:
+        current.coinCurveId || (typeof parsed.curve_id === "string" ? parsed.curve_id : ""),
+      coinVaultId:
+        current.coinVaultId || (typeof parsed.vault_id === "string" ? parsed.vault_id : ""),
+    }));
+  }, [chainReady, client, contracts.moduleNames.coinLaunch, contracts.packageId]);
+
   const hydrateCreateResult = useCallback(async (digest: string) => {
     const response = await client.getTransactionBlock({
       digest,
@@ -783,6 +999,10 @@ export function LaunchpadClient() {
       ...current,
       curveId: created.curveId || current.curveId,
       vaultId: created.vaultId || current.vaultId,
+      coinCurveId: created.coinCurveId || current.coinCurveId,
+      coinVaultId: created.coinVaultId || current.coinVaultId,
+      coinCreatorCapId: created.coinCreatorCapId || current.coinCreatorCapId,
+      deepbookPoolId: created.deepbookPoolId || current.deepbookPoolId,
     }));
 
     await refreshOwnedObjects(created.curveId);
@@ -809,6 +1029,7 @@ export function LaunchpadClient() {
         setOwnedLaunchTokens([]);
         setOwnedVaults([]);
         setOwnedCreatorCaps([]);
+        setOwnedCoinCreatorCaps([]);
       });
       return;
     }
@@ -830,6 +1051,31 @@ export function LaunchpadClient() {
       void refreshArena();
     });
   }, [chainReady, refreshArena]);
+
+  useEffect(() => {
+    if (!chainReady) return;
+
+    queueMicrotask(() => {
+      void refreshCoinLaunchEvents();
+    });
+  }, [chainReady, refreshCoinLaunchEvents]);
+
+  useEffect(() => {
+    if (!ownedCoinCreatorCaps.length) return;
+
+    queueMicrotask(() => {
+      setRuntimeIds((current) => {
+        const matchingCap =
+          ownedCoinCreatorCaps.find((cap) => cap.curveId === current.coinCurveId) ??
+          (ownedCoinCreatorCaps.length === 1 ? ownedCoinCreatorCaps[0] : null);
+
+        return {
+          ...current,
+          coinCreatorCapId: current.coinCreatorCapId || matchingCap?.objectId || "",
+        };
+      });
+    });
+  }, [ownedCoinCreatorCaps]);
 
   async function claimVault(vaultId: string, curveId: string) {
     if (!account) {
@@ -992,6 +1238,68 @@ export function LaunchpadClient() {
       await refreshArena();
       await refreshOwnedObjects(runtimeIds.curveId || undefined);
       setStatus(`Executed ${kind}. Digest: ${digest}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown transaction error";
+      setStatus(message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runDeepBookAction(kind: "coinbuy" | "createpool" | "graduate") {
+    if (!account) {
+      setStatus("Connect a wallet first.");
+      return;
+    }
+
+    if (String(network) !== DEFAULT_NETWORK) {
+      setStatus(`Switch the wallet network to ${DEFAULT_NETWORK} before executing.`);
+      return;
+    }
+
+    if (!chainReady) {
+      setStatus("Fill real package and object IDs in src/lib/contracts.ts before executing.");
+      return;
+    }
+
+    if (kind === "coinbuy" && (!runtimeIds.coinCurveId || !runtimeIds.coinVaultId)) {
+      setStatus("Set Coin Curve and Coin Vault before buying Sample Coin.");
+      return;
+    }
+
+    if (kind === "graduate") {
+      if (!runtimeIds.coinCurveId || !runtimeIds.coinVaultId || !runtimeIds.coinCreatorCapId || !runtimeIds.deepbookPoolId) {
+        setStatus("Set Coin Curve, Coin Vault, Coin CreatorCap, and DeepBook Pool before graduating to DeepBook.");
+        return;
+      }
+    }
+
+    try {
+      setBusy(kind);
+      setStatus(`${kind} transaction pending signature...`);
+
+      const tx =
+        kind === "coinbuy"
+          ? buildBuySampleCoinTx(runtimeIds, 0.02, account.address)
+          : kind === "createpool"
+          ? buildCreateSampleDeepBookPoolTx()
+          : buildGraduateSampleToDeepBookTx(runtimeIds, account.address);
+
+      const digest = await executeTransaction(dapp.signAndExecuteTransaction, tx);
+      const created = await hydrateCreateResult(digest);
+      await refreshOwnedObjects(runtimeIds.curveId || undefined);
+
+      if (kind === "coinbuy") {
+        setStatus(`Bought Sample Coin through coin_launch. Digest: ${digest}`);
+      } else if (kind === "createpool") {
+        setStatus(
+          `Created DeepBook pool. Digest: ${digest}. Pool ${shortId(created.deepbookPoolId)}. This spends 500 testnet DEEP.`,
+        );
+      } else {
+        setStatus(
+          `Graduated Sample Coin into DeepBook. Digest: ${digest}. BalanceManager ${shortId(created.balanceManagerId)}.`,
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown transaction error";
       setStatus(message);
@@ -1221,7 +1529,7 @@ export function LaunchpadClient() {
           </button>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        <div className="mt-4 grid gap-3 xl:grid-cols-4">
           <div className="rounded-[18px] border border-stone-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-stone-500">LaunchTokens</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1292,6 +1600,31 @@ export function LaunchpadClient() {
                 ))
               ) : (
                 <p className="text-sm text-stone-500">No CreatorCap objects found for this wallet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[18px] border border-stone-200 bg-white p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Coin CreatorCaps</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {ownedCoinCreatorCaps.length > 0 ? (
+                ownedCoinCreatorCaps.map((cap) => (
+                  <button
+                    key={cap.objectId}
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-900"
+                    onClick={() => {
+                      updateRuntimeId("coinCreatorCapId", cap.objectId);
+                      if (!runtimeIds.coinCurveId && cap.curveId) {
+                        updateRuntimeId("coinCurveId", cap.curveId);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {shortId(cap.objectId)} | {shortId(cap.curveId)}
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-stone-500">No CoinCreatorCap objects found for this wallet.</p>
               )}
             </div>
           </div>
@@ -1514,6 +1847,10 @@ export function LaunchpadClient() {
             ["curveId", "Curve ID"],
             ["vaultId", "Vault ID"],
             ["launchTokenId", "LaunchToken ID"],
+            ["coinCurveId", "Coin Curve ID"],
+            ["coinVaultId", "Coin Vault ID"],
+            ["coinCreatorCapId", "Coin CreatorCap ID"],
+            ["deepbookPoolId", "DeepBook Pool ID"],
             ["duelId", "Duel ID"],
             ["curveA", "Curve A"],
             ["vaultA", "Vault A"],
@@ -1537,6 +1874,27 @@ export function LaunchpadClient() {
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <button
+          className="rounded-full bg-emerald-800 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy !== null}
+          onClick={() => void runDeepBookAction("coinbuy")}
+        >
+          {busy === "coinbuy" ? "Buying..." : "Buy Sample Coin"}
+        </button>
+        <button
+          className="rounded-full bg-teal-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy !== null}
+          onClick={() => void runDeepBookAction("createpool")}
+        >
+          {busy === "createpool" ? "Creating..." : "Create DeepBook Pool"}
+        </button>
+        <button
+          className="rounded-full bg-lime-700 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy !== null}
+          onClick={() => void runDeepBookAction("graduate")}
+        >
+          {busy === "graduate" ? "Graduating..." : "Graduate to DeepBook"}
+        </button>
         <button
           className="rounded-full bg-stone-950 px-4 py-3 text-sm font-medium text-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy !== null}
