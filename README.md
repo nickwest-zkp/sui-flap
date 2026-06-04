@@ -1,54 +1,100 @@
-# SuiFlap Prototype
+# SuiFlap
 
-This repository now contains a minimal Sui Move prototype for a Sui + Walrus memecoin launchpad focused on three core flows:
+SuiFlap is a Sui-native launchpad prototype for memecoin-style launches, creator vaults, PvP token duels, and DeepBook graduation.
 
-- `token_curve`: launch object, simplified bonding curve, transferable token objects, graduation event
-- `tax_vault`: buy/sell tax routing, creator perpetual vault accounting, claim flow
-- `duel`: shared arena for PvP token volume battles
-- `deepbook_integrator` + `asset_migration`: DeepBook graduation routing and object-to-coin migration planning
-- `coin_launch`: DeepBook-ready `Coin<T>` launch path with real fungible coins, tax vaults, metadata caps, and graduation asset release
-- `sample_coin`: example static launch coin module for testing the `Coin<T>` path
+The current implementation has two launch paths:
 
-## Current Scope
+- `coin_launch`: the real DeepBook-ready path. Each launch uses a static `Coin<T>` type, trades through a bonding curve, creates tax vault accounting, and can graduate liquidity into DeepBook.
+- `token_curve` / `tax_vault` / `duel`: the older object-token path used for app experiments, object-based trading, creator fee vaults, and duel flows. These object tokens cannot trade directly on DeepBook.
 
-The Move package is under [sui_flap](D:\workspace\sui-flap\sui_flap).
+## Current Testnet Deployment
 
-The package now has two launch paths:
+- Original package: `0x15f86e205a99a916404ae9cdf64c54b3c03c36274cfa0db757d7308c2fb677de`
+- Current v2 package: `0x7bdba89d4f11178ca5c21d93bb6b3825ce14f179c9eb2bb3670a89303ed7b585`
+- Arena: `0x338fa3a3b7581a27202fce01944d0607bb1b400e513210707697ea0a1acbb41e`
+- UpgradeCap: `0x25ea659c82f219212a7ad910e1a2a8c099f29d0313e5cae69754c7fcb301b48a`
+- Sample DeepBook pool: `0x0e7e575c9be015da61ef0ac522ac2494e563e960cd1b30177ae8fdcb7741457e`
 
-- It uses transferable `LaunchToken` objects instead of runtime-created custom `Coin<T>` types.
-- It also includes a DeepBook-ready `Coin<T>` path for launches published with a static coin type.
-- It emits events and models the core objects/capabilities needed for a frontend and indexer.
-- Duel resolution currently records the winner/loser and leaves "loser liquidity auto-buy winner token" as a next implementation step.
-- DeepBook graduation for the `Coin<T>` path releases base token and SUI reserve coins that a frontend PTB can pass into the official DeepBook SDK for pool creation, BalanceManager deposits, or maker orders.
+Frontend config keeps both package IDs:
 
-## Why Not Dynamic `Coin<T>`?
+- `originalPackageId` is used for object and event type discovery.
+- `packageId` is used for current v2 function calls.
 
-Sui cannot mint arbitrary new `Coin<T>` types at runtime from one already-published package the way an EVM launchpad can deploy unlimited new ERC-20 contracts.
+## Real DeepBook Launch Flow
 
-For a Pump.fun-style multi-launch contract, the practical on-chain pattern is:
+DeepBook V3 only trades real `Coin<T>` assets. Sui does not let one already-published package dynamically create arbitrary new `T` types at runtime. For that reason, every project coin that needs real DeepBook graduation must publish its own small Move package with a static witness type.
 
-- one shared `TokenCurve` object per launch
-- one transferable `LaunchToken` object per holder or per lot
-- split / merge / transfer at the object level
+Use the template in:
 
-This keeps launches dynamic while still giving holders real transferable on-chain assets.
+```text
+templates/deepbook_coin_launch
+```
 
-## Suggested Build Order
+The template package calls:
 
-1. Add zero-balance token cleanup and optional holder registry/indexing.
-2. Implement duel winner settlement so loser-side reserved liquidity auto-buys the winner.
-3. Add graduation integration for Cetus/Turbos CLMM pool creation.
-4. Add Walrus upload flow in frontend and persist blob IDs into launch objects.
-5. Add tests for pricing math, tax splits, split/merge, and duel lifecycle.
+```move
+sui_flap::coin_launch::create_and_share_launch<T>
+```
 
-## DeepBook Constraint
+Publishing that package creates:
 
-DeepBook V3 operates on real `Coin<T>` assets and shared CLOB pools. This prototype still uses transferable `LaunchToken` objects so one package can support many launches dynamically.
+- shared `CoinCurve<T>`
+- shared `CoinTaxVault<T>`
+- owned `CoinCreatorCap<T>`
+- owned metadata cap
 
-That means:
+The frontend then follows this order:
 
-- the current prototype can mark a launch as DeepBook-ready
-- it can store the intended DeepBook pool / quote route
-- it cannot directly place the current `LaunchToken` object on DeepBook without a later redesign that mints a static `Coin<T>` asset per launch
+1. Refresh launch IDs after the `Coin<T>` package is published.
+2. Buy from the `CoinCurve<T>` until the graduation threshold is reached.
+3. Create the DeepBook pool for the pair. This costs 500 testnet DEEP.
+4. Graduate the launch into DeepBook by depositing liquidity into a BalanceManager and placing the initial maker order.
 
-The added `coin_launch` module is the path that can actually graduate to DeepBook because it mints real `Coin<T>` assets. The older `deepbook_integrator` and `asset_migration` modules remain as a coordination layer for the object-token prototype.
+## Move Package
+
+Main package:
+
+```bash
+cd sui_flap
+sui move build --allow-dirty
+```
+
+Upgrade command:
+
+```bash
+sui client upgrade . --upgrade-capability 0x25ea659c82f219212a7ad910e1a2a8c099f29d0313e5cae69754c7fcb301b48a --gas-budget 200000000 --json
+```
+
+Template build:
+
+```bash
+sui move build --path templates/deepbook_coin_launch --allow-dirty
+```
+
+## Frontend
+
+The app is under `web`.
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Production checks:
+
+```bash
+npm run lint
+npm run build
+```
+
+The launchpad UI now exposes the real execution order as a 4-step DeepBook flow. Legacy object-token and duel actions are kept under Advanced actions.
+
+## Module Map
+
+- `coin_launch`: real `Coin<T>` launch, buy/sell, tax vault accounting, graduation asset release
+- `sample_coin`: example static coin launch for testing
+- `token_curve`: object-token bonding curve prototype
+- `tax_vault`: object-token tax routing and fee claims
+- `duel`: PvP volume duel prototype
+- `deepbook_integrator` / `asset_migration`: coordination metadata for the older object-token prototype

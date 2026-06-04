@@ -8,6 +8,18 @@ Edit `sources/project_coin.move` before publishing:
 - Set the name, symbol, description, Walrus blob ID, graduation threshold, taxes, and pool label.
 - Publish the package on testnet after the main `sui_flap` package is upgraded to v2.
 
+Build locally:
+
+```bash
+sui move build --path templates/deepbook_coin_launch --allow-dirty
+```
+
+Publish from this directory after editing:
+
+```bash
+sui client publish . --gas-budget 200000000 --json
+```
+
 When the package is published, `init` calls `sui_flap::coin_launch::create_and_share_launch<T>` and creates:
 
 - shared `CoinCurve<T>`
